@@ -184,7 +184,7 @@ if train_file and st.button("Train Meta-Model"):
     st.text(classification_report(y_train, preds))
 
     cm = confusion_matrix(y_train, preds, labels=[NEG_LABEL, POS_LABEL])
-    fig, ax = plt.subplots(figsize = (2.5,2.5))
+    fig, ax = plt.subplots(figsize = (0.5,0.5))
     ConfusionMatrixDisplay(cm, display_labels=[NEG_LABEL, POS_LABEL]).plot(ax=ax)
     st.pyplot(fig)
 
