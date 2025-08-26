@@ -31,16 +31,14 @@ NEG_LABEL = "Under-Patron"
 # Helper: rebuild pipeline from metadata
 # ==============================
 def build_pipeline_from_meta(meta, available_cols=None):
-    """Rebuild a pipeline from metadata bundle."""
     model_choice = meta.get("model_choice")
-    hyperparams = dict(meta.get("hyperparams", {}))  # copy safe
+    hyperparams = dict(meta.get("hyperparams", {}))
 
-    # Strip junk keys that break sklearn clone
+    # Strip bad hyperparams that break sklearn clone
     for bad_key in ["sparse", "sparse_output"]:
         if bad_key in hyperparams:
             hyperparams.pop(bad_key)
 
-    # Classifier factory
     if model_choice == "Logistic Regression":
         clf = LogisticRegression(**hyperparams)
     elif model_choice == "Random Forest":
@@ -75,8 +73,10 @@ def build_pipeline_from_meta(meta, available_cols=None):
 
 
 # ==============================
-# Meta-model choice
+# Meta-model choice (now with knobs)
 # ==============================
+st.subheader("Choose Final Meta-Model")
+
 meta_model_choice = st.selectbox(
     "Final Meta-Model",
     ["Logistic Regression", "Random Forest", "AdaBoost", "KNN", "Naive Bayes"]
@@ -85,23 +85,36 @@ meta_model_choice = st.selectbox(
 if meta_model_choice == "Logistic Regression":
     max_iter = st.slider("Max Iterations", 200, 5000, 1000, 100)
     final_estimator = LogisticRegression(max_iter=max_iter, class_weight="balanced")
+
 elif meta_model_choice == "Random Forest":
-    n_estimators = st.slider("Number of Trees", 50, 1000, 200, 50)
-    final_estimator = RandomForestClassifier(n_estimators=n_estimators,
-                                             class_weight="balanced_subsample",
-                                             random_state=42)
+    n_estimators = st.slider("Number of Trees (n_estimators)", 50, 1000, 200, 50)
+    max_depth = st.slider("Max Depth (None = unlimited)", 1, 50, 10, 1)
+    final_estimator = RandomForestClassifier(
+        n_estimators=n_estimators,
+        max_depth=None if max_depth == 50 else max_depth,
+        class_weight="balanced_subsample",
+        random_state=42
+    )
+
 elif meta_model_choice == "AdaBoost":
     n_estimators = st.slider("Number of Estimators", 50, 800, 200, 50)
-    final_estimator = AdaBoostClassifier(n_estimators=n_estimators, random_state=42)
+    learning_rate = st.slider("Learning Rate", 0.01, 2.0, 1.0, 0.01)
+    final_estimator = AdaBoostClassifier(
+        n_estimators=n_estimators,
+        learning_rate=learning_rate,
+        random_state=42
+    )
+
 elif meta_model_choice == "KNN":
     k = st.slider("Number of Neighbors (k)", 3, 50, 10, 1)
     final_estimator = KNeighborsClassifier(n_neighbors=k, weights="distance")
-else:
+
+else:  # Naive Bayes
     final_estimator = GaussianNB()
 
 
 # ==============================
-# Upload base models (metadata or full pipeline)
+# Upload base models
 # ==============================
 st.subheader("Upload Base Models")
 n_models = st.number_input("Number of base models", min_value=1, max_value=10, step=1)
@@ -113,20 +126,17 @@ for i in range(int(n_models)):
         try:
             bundle = joblib.load(uploaded)
 
-            # Case 1: metadata bundle
             if isinstance(bundle, dict) and "model_choice" in bundle:
                 pipe = build_pipeline_from_meta(bundle)
                 if pipe is not None:
                     uploaded_models.append((f"model{i+1}", pipe))
                     st.success(f"Loaded metadata bundle for Model {i+1}")
 
-            # Case 2: full pipeline bundle
             elif isinstance(bundle, dict) and "pipeline" in bundle:
                 pipe = bundle["pipeline"]
                 uploaded_models.append((f"model{i+1}", pipe))
                 st.success(f"Loaded full pipeline for Model {i+1}")
 
-            # Case 3: direct pipeline object
             elif isinstance(bundle, Pipeline):
                 uploaded_models.append((f"model{i+1}", bundle))
                 st.success(f"Loaded sklearn Pipeline for Model {i+1}")
@@ -139,7 +149,7 @@ for i in range(int(n_models)):
 
 
 # ==============================
-# Upload training CSV (for meta-model training)
+# Upload training CSV (meta-model training)
 # ==============================
 train_file = st.file_uploader("Upload Training CSV (must include Donor_Category)", type=["csv"])
 
@@ -152,7 +162,6 @@ if train_file and st.button("Train Meta-Model"):
     X_train = df.drop(columns=[TARGET_COL, ID_COL], errors="ignore")
     y_train = df[TARGET_COL]
 
-    # Impute any NaNs
     X_train = X_train.fillna(0.5)
 
     if len(uploaded_models) == 0:
@@ -175,7 +184,7 @@ if train_file and st.button("Train Meta-Model"):
     st.text(classification_report(y_train, preds))
 
     cm = confusion_matrix(y_train, preds, labels=[NEG_LABEL, POS_LABEL])
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize = (2.5,2.5))
     ConfusionMatrixDisplay(cm, display_labels=[NEG_LABEL, POS_LABEL]).plot(ax=ax)
     st.pyplot(fig)
 
