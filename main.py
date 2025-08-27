@@ -181,19 +181,24 @@ if train_file and st.button("Train Meta-Model"):
 
     # Show base model weights if available
     st.subheader("Base Model Weights in Meta-Model")
+    # Show normalized (percentage) weights if available
     if hasattr(stack.final_estimator_, "coef_"):
         weights = stack.final_estimator_.coef_.flatten()
-        for name, weight in zip([name for name, _ in uploaded_models], weights):
-            st.write(f"**{name}**: {weight:.4f}")
-    else:
-        st.info("Base model weights are not available for this meta-model type.")
+        abs_sum = np.sum(np.abs(weights))
+        if abs_sum > 0:
+            st.subheader("Base Model Relative Importance (%)")
+            for name, weight in zip([name for name, _ in uploaded_models], weights):
+                pct = 100 * np.abs(weight) / abs_sum
+                st.write(f"**{name}**: {pct:.1f}%")
+        else:
+            st.info("All coefficients are zero; cannot compute relative importance.")
 
     preds = stack.predict(X_train)
     st.subheader("Classification Report")
     st.text(classification_report(y_train, preds))
 
     cm = confusion_matrix(y_train, preds, labels=[NEG_LABEL, POS_LABEL])
-    fig, ax = plt.subplots(figsize = (1.5,1.5))
+    fig, ax = plt.subplots(figsize = (2.5,2.5))
     ConfusionMatrixDisplay(cm, display_labels=[NEG_LABEL, POS_LABEL]).plot(ax=ax)
     st.pyplot(fig)
 
