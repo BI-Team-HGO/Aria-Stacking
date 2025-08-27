@@ -179,6 +179,15 @@ if train_file and st.button("Train Meta-Model"):
     st.session_state["meta_model"] = stack
     st.success("Meta-model trained successfully!")
 
+    # Show base model weights if available
+    st.subheader("Base Model Weights in Meta-Model")
+    if hasattr(stack.final_estimator_, "coef_"):
+        weights = stack.final_estimator_.coef_.flatten()
+        for name, weight in zip([name for name, _ in uploaded_models], weights):
+            st.write(f"**{name}**: {weight:.4f}")
+    else:
+        st.info("Base model weights are not available for this meta-model type.")
+
     preds = stack.predict(X_train)
     st.subheader("Classification Report")
     st.text(classification_report(y_train, preds))
