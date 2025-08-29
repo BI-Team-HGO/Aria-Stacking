@@ -56,9 +56,31 @@ def build_pipeline_from_meta(meta, available_cols=None):
     cat_cols = meta.get("categorical_columns_used", [])
 
     if available_cols is not None:
+        missing_cols = [c for c in num_cols + cat_cols if c not in available_cols]
+        if missing_cols:
+            import streamlit as st  # Ensure this is imported at the top
+            st.warning(f"The following expected columns were not found in the uploaded CSV: {missing_cols}")
+
         num_cols = [c for c in num_cols if c in available_cols]
         cat_cols = [c for c in cat_cols if c in available_cols]
 
+        # Debug type issues in categorical columns
+    if available_cols is not None:
+        bad_type_cols = []
+        for col in cat_cols:
+            if col in available_cols:
+                unique_types = set(type(val) for val in available_cols[col].dropna())
+                if len(unique_types) > 1:
+                    bad_type_cols.append((col, unique_types))
+
+        if bad_type_cols:
+            for col, types_found in bad_type_cols:
+                st.error(f"❌ Column '{col}' has mixed types: {types_found}. Fix this column in your CSV.")
+            raise ValueError("One or more categorical columns contain mixed types.")
+
+        for col in cat_cols:
+            if col in available_cols:
+                available_cols[col] = available_cols[col].astype(str)
     try:
         ohe = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
     except TypeError:
@@ -127,7 +149,7 @@ for i in range(int(n_models)):
             bundle = joblib.load(uploaded)
 
             if isinstance(bundle, dict) and "model_choice" in bundle:
-                pipe = build_pipeline_from_meta(bundle)
+                pipe = build_pipeline_from_meta(bundle, available_cols=df.columns)
                 if pipe is not None:
                     uploaded_models.append((f"model{i+1}", pipe))
                     st.success(f"Loaded metadata bundle for Model {i+1}")
@@ -155,9 +177,17 @@ train_file = st.file_uploader("Upload Training CSV (must include Donor_Category)
 
 if train_file and st.button("Train Meta-Model"):
     df = pd.read_csv(train_file)
+
+    st.write("Column types:")
+    st.write(df.dtypes)
+
     if TARGET_COL not in df.columns or ID_COL not in df.columns:
         st.error(f"CSV must include both '{ID_COL}' and '{TARGET_COL}'")
         st.stop()
+
+    # Force all object columns to strings to avoid OneHotEncoder crash
+    for col in df.select_dtypes(include="object").columns:
+        df[col] = df[col].astype(str)
 
     X_train = df.drop(columns=[TARGET_COL, ID_COL], errors="ignore")
     y_train = df[TARGET_COL]
@@ -213,6 +243,14 @@ thr = st.slider("Decision Threshold for Patron+", 0.0, 1.0, 0.5, 0.01)
 
 if pred_file and "meta_model" in st.session_state:
     new_df = pd.read_csv(pred_file)
+        # Clean up Excel-like error values before processing
+    error_values = ["#DIV/0!", "#N/A", "#VALUE!", "N/A", "na", "NA", "null"]
+    new_df.replace(error_values, np.nan, inplace=True)
+
+    # Optional: force all object columns to strings to avoid OneHotEncoder crash
+    for col in new_df.select_dtypes(include="object").columns:
+        new_df[col] = new_df[col].astype(str)
+
     if ID_COL not in new_df.columns:
         st.error(f"Prediction CSV must include '{ID_COL}'")
     else:
