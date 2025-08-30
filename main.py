@@ -87,9 +87,15 @@ def build_pipeline_from_meta(meta, available_cols=None):
         ohe = OneHotEncoder(handle_unknown="ignore", sparse=False)
 
     pre = ColumnTransformer([
-        ("num", MinMaxScaler(), num_cols),
-        ("cat", ohe, cat_cols)
-    ], remainder="drop")
+    ("num", Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", MinMaxScaler())
+    ]), num_cols),
+    ("cat", Pipeline([
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        ("ohe", ohe)
+    ]), cat_cols)
+], remainder="drop")
 
     return Pipeline([("prep", pre), ("clf", clf)])
 
